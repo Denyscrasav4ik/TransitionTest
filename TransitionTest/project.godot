@@ -30,7 +30,7 @@ window/stretch/aspect="expand"
 
 [dotnet]
 
-project/assembly_name="Новий проєкт гри"
+project/assembly_name="TransitionTest"
 
 [physics]
 
