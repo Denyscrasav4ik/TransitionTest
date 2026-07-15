@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bvapqv0g0nmnk"]
+
+[ext_resource type="Script" uid="uid://bqpdsb4htf21v" path="res://Transition.cs" id="1_hcbf3"]
+
+[node name="TransitionTest" type="Node2D" unique_id=998385986]
+script = ExtResource("1_hcbf3")
