@@ -2,6 +2,15 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>TransitionTest</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <TrimmerRootAssembly Include="$(TargetName)" />
+    <TrimmerRootAssembly Include="GodotSharp" />
+  </ItemGroup>
 </Project>

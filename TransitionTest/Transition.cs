@@ -3,21 +3,32 @@ using System.Collections.Generic;
 
 public partial class Transition : Node2D
 {
+    public enum RippleMode
+    {
+        CenterOut,
+        EdgesIn
+    }
+
     [ExportCategory("Grid Configuration")]
-    [Export] public int CellSize { get; set; } = 32;
+    [Export] public int CellSize { get; set; } = 64;
+    [Export] public float CellSpacing { get; set; } = 0f; // How tightly tiles are packed (negative = overlap, positive = gap)
+    [Export] public Texture2D? CustomTexture { get; set; } // Customizable shape sprite
 
     [ExportCategory("Explosion & Physics")]
-    [Export] public float WaveSpeed { get; set; } = 800f;       // Speed of the radial ripple propagation (pixels/sec)
+    [Export] public RippleMode Mode { get; set; } = RippleMode.CenterOut; // Toggle between radial modes
+    [Export] public float WaveSpeed { get; set; } = 600f;       // Speed of the radial ripple propagation (pixels/sec)
     [Export] public float PushDistance { get; set; } = 400f;     // How far squares travel outward during explosion
     [Export] public float FadeDuration { get; set; } = 1.2f;     // Duration of the fade/color shift once triggered
+
+    [ExportCategory("Visuals")]
+    [Export] public Color TargetColor { get; set; } = Color.FromHtml("2596be"); // Customizable ending color
+    [Export(PropertyHint.Range, "0,1")] public float TargetAlpha { get; set; } = 0.0f; // Customizable ending transparency
 
     [ExportCategory("Spin / Rotation")]
     [Export] public float MinSpin { get; set; } = 2.0f;          // Minimum total spin (radians)
     [Export] public float MaxSpin { get; set; } = 6.0f;          // Maximum total spin (radians)
 
-    // Cyan color: #2596be
-    private readonly Color TargetColor = Color.FromHtml("2596be");
-    private Texture2D _whiteTexture;
+    private Texture2D? _whiteTexture;
     private List<GridCell> _cells = new List<GridCell>();
 
     // State machine properties
@@ -27,7 +38,7 @@ public partial class Transition : Node2D
     // Helper class to manage individual cell state
     private class GridCell
     {
-        public Sprite2D Sprite;
+        public Sprite2D? Sprite;
         public Vector2 StartPosition;          // Grid slot coordinate
         public Vector2 TargetExplodedPosition; // Far-out coordinate
         public float Delay;
@@ -38,7 +49,11 @@ public partial class Transition : Node2D
 
     public override void _Ready()
     {
-        _whiteTexture = CreateWhiteTexture(CellSize);
+        // Only generate the default texture if a custom one isn't provided
+        if (CustomTexture == null)
+        {
+            _whiteTexture = CreateWhiteTexture(CellSize);
+        }
         GenerateGrid();
     }
 
@@ -54,19 +69,27 @@ public partial class Transition : Node2D
         ClearGrid();
 
         Vector2 viewportSize = GetViewportRect().Size;
-        int cols = Mathf.CeilToInt(viewportSize.X / CellSize);
-        int rows = Mathf.CeilToInt(viewportSize.Y / CellSize);
+
+        // Calculate the physical step size of each cell including the spacing
+        float step = CellSize + CellSpacing;
+
+        // Safety check to prevent dividing by zero or negative infinite loops if packed too tightly
+        if (step <= 0.1f) step = 0.1f;
+
+        // Add +1 to columns and rows to ensure the screen edges remain fully covered when spacing is applied
+        int cols = Mathf.CeilToInt(viewportSize.X / step) + 1;
+        int rows = Mathf.CeilToInt(viewportSize.Y / step) + 1;
 
         for (int r = 0; r < rows; r++)
         {
             for (int c = 0; c < cols; c++)
             {
                 var sprite = new Sprite2D();
-                sprite.Texture = _whiteTexture;
+                sprite.Texture = CustomTexture != null ? CustomTexture : _whiteTexture;
 
                 Vector2 pos = new Vector2(
-                    c * CellSize + CellSize / 2f,
-                    r * CellSize + CellSize / 2f
+                    c * step + CellSize / 2f,
+                    r * step + CellSize / 2f
                 );
                 sprite.Position = pos;
 
@@ -99,6 +122,25 @@ public partial class Transition : Node2D
     {
         _isAnimating = true;
 
+        // Calculate the maximum possible distance to the corners of the screen for EdgesIn mode
+        float maxDistance = 0f;
+        if (Mode == RippleMode.EdgesIn)
+        {
+            Vector2 viewportSize = GetViewportRect().Size;
+            Vector2[] corners = {
+                Vector2.Zero,
+                new Vector2(viewportSize.X, 0),
+                new Vector2(0, viewportSize.Y),
+                new Vector2(viewportSize.X, viewportSize.Y)
+            };
+
+            foreach (var corner in corners)
+            {
+                float dist = (corner - clickPos).Length();
+                if (dist > maxDistance) maxDistance = dist;
+            }
+        }
+
         foreach (var cell in _cells)
         {
             if (!GodotObject.IsInstanceValid(cell.Sprite)) continue;
@@ -121,8 +163,17 @@ public partial class Transition : Node2D
                 float spinAmount = (float)GD.RandRange(MinSpin, MaxSpin);
                 cell.TargetRotation = GD.Randf() > 0.5f ? spinAmount : -spinAmount;
 
-                // Ripple delay spreads outward from the click point
-                cell.Delay = distance / WaveSpeed;
+                // Delay logic based on selected Mode
+                if (Mode == RippleMode.CenterOut)
+                {
+                    // Ripple delay spreads outward from the click point
+                    cell.Delay = distance / WaveSpeed;
+                }
+                else
+                {
+                    // Ripple delay begins at the edges and caves inward
+                    cell.Delay = (maxDistance - distance) / WaveSpeed;
+                }
             }
             else
             {
@@ -130,7 +181,15 @@ public partial class Transition : Node2D
                 // For a highly dynamic feel, the return ripple originates from where the click occurred
                 // relative to the floating outer blocks!
                 float distance = (cell.TargetExplodedPosition - clickPos).Length();
-                cell.Delay = distance / WaveSpeed;
+
+                if (Mode == RippleMode.CenterOut)
+                {
+                    cell.Delay = distance / WaveSpeed;
+                }
+                else
+                {
+                    cell.Delay = (maxDistance - distance) / WaveSpeed;
+                }
             }
         }
     }
@@ -169,9 +228,9 @@ public partial class Transition : Node2D
                 cell.Sprite.Position = cell.StartPosition.Lerp(cell.TargetExplodedPosition, easeProgress);
                 cell.Sprite.Rotation = Mathf.Lerp(0f, cell.TargetRotation, easeProgress);
 
-                // Fade: White Opaque -> Blue Transparent
+                // Fade: White Opaque -> Target Color at Target Alpha
                 Color col = Colors.White.Lerp(TargetColor, progress);
-                col.A = 1.0f - (progress * progress); // Quadratic fade out
+                col.A = Mathf.Lerp(1.0f, TargetAlpha, progress * progress); // Quadratic fade out
                 cell.Sprite.Modulate = col;
             }
             else
@@ -180,9 +239,9 @@ public partial class Transition : Node2D
                 cell.Sprite.Position = cell.TargetExplodedPosition.Lerp(cell.StartPosition, easeProgress);
                 cell.Sprite.Rotation = Mathf.Lerp(cell.TargetRotation, 0f, easeProgress);
 
-                // Fade: Blue Transparent -> White Opaque
+                // Fade: Target Color at Target Alpha -> White Opaque
                 Color col = TargetColor.Lerp(Colors.White, progress);
-                col.A = progress * progress; // Quadratic fade in
+                col.A = Mathf.Lerp(TargetAlpha, 1.0f, progress * progress); // Quadratic fade in
                 cell.Sprite.Modulate = col;
             }
 
@@ -192,7 +251,8 @@ public partial class Transition : Node2D
                 cell.HasFinished = true;
 
                 // Optimization: Hide sprites that are fully exploded and invisible
-                if (!_isExplodedState)
+                // Only hide if TargetAlpha is completely transparent
+                if (!_isExplodedState && TargetAlpha <= 0.001f)
                 {
                     cell.Sprite.Visible = false;
                 }
