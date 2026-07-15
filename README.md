@@ -7,3 +7,6 @@ I have tried to replicate the JS&B end-level transition in Godot with C#. Click 
 ## 📜 License
 
 This project is shared under the MIT License. Read LICENSE for more info.
+
+
+> This repository won't go on the website as it's too small to be meaningful.
